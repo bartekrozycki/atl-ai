@@ -82,6 +82,59 @@ Status: `[ ]` todo · `[~]` in progress · `[x]` done
 
 ---
 
+## Execution plan — task distribution
+
+Model: one task → one Worker → one blind Validator → merge. Tasks inside a wave run in parallel; waves are sequential. Parallelism cap **3 workers** — above that, merge conflicts on shared files eat the gain.
+
+**File-conflict hotspots** (serialize or pre-partition):
+- `Atl.psd1` / `Atl.psm1` (every cmdlet adds an export) → workers never touch them; wave-close integrator commit adds exports.
+- `Private/JiraService.ps1` (M1-06, M1-09, M1-10 all extend it) → pre-split into `JiraService.Issue.ps1` / `.Search.ps1` / `.Meta.ps1` at scaffold time (M1-01), one file per task.
+- `Private/Render.Markdown.ps1` (issue MD in M1-07, aggregate headers in M1-09, provenance in M2-12) → contract: M1-07 owns the file; later tasks extend via well-named functions, validator checks no rewrites of existing ones.
+
+**Interface contracts before parallel waves** (written by the wave-opening task, frozen for the wave): normalized issue-object shape (M1-06 ↔ M1-07/08/12), `Invoke-AtlRequest` signature (M1-03 ↔ everyone), resolve result shape (M2-02 ↔ M2-04..07).
+
+### M1 waves
+
+| Wave | Tasks (parallel) | Note |
+|---|---|---|
+| 1.0 | M1-01 | solo — scaffold + file partition + contracts doc |
+| 1.1 | M1-02 · M1-03 · M1-04+05 | 04+05 bundled (errors used by config tests); 03 stubs config access, rebinds in 1.2 |
+| 1.2 | M1-06 · M1-07+08 | 06 = service+issue cmdlet; 07+08 bundled (renderers, shared golden harness) against frozen issue-object contract |
+| 1.3 | M1-09 · M1-10+11 · M1-12 | search; meta+check bundled; output modes |
+| 1.4 | M1-13 · M1-14 | docs + drift CI; validator = fresh-eyes run of M1 exit test |
+
+### M2 waves
+
+| Wave | Tasks | Note |
+|---|---|---|
+| 2.0 | **M2-04 spike** (timeboxed, throwaway) | de-risk scope-change/changelog on real DC before committing wave shape |
+| 2.1 | M2-01 · M2-03 · M2-09+10 | meta kinds; changelog crawler; mappings+knowledge bundled |
+| 2.2 | M2-02 · M2-11 | resolve (needs mappings); context |
+| 2.3 | M2-04 · M2-06+07 · M2-05 | sprint report (biggest task, gets the strongest budget); epic+release bundled; backlog mode |
+| 2.4 | M2-08 · M2-12 | velocity; provenance rendering |
+| 2.5 | M2-13 | docs; validator runs M2 exit test |
+
+### M3 waves
+
+| Wave | Tasks | Note |
+|---|---|---|
+| 3.1 | M3-01 · M3-02 | service ∥ storage-format renderer (riskiest — 2× budget, extra fixture set) |
+| 3.2 | M3-03 · M3-04+05 | traceability; search+children+spaces bundled |
+| 3.3 | M3-06 | docs + M3 exit test |
+
+### M4 waves
+
+| Wave | Tasks | Note |
+|---|---|---|
+| 4.0 | **M4-05 application** | external dependency — file SignPath application on day one, work continues while pending |
+| 4.1 | M4-01 · M4-02+03 | wizard (biggest M4 task); agent-setup + docs cmdlet bundled |
+| 4.2 | M4-04 · M4-06 | pipeline; README |
+| 4.3 | M4-07 | solo — acceptance sweep, tag v1.0.0 |
+
+**Critical path**: M1-01 → M1-03 → M1-06 → M1-09 → M2-03 → M2-04 → M2-08 → M4-07. Anything not on it can slip a wave without moving the release.
+
+**Validator rules** (blind): validator gets the task card + PRD sections + test suite, not the worker's reasoning. Rejects on: missing named test hooks, business logic in `Public/`, any HTTP outside `Invoke-AtlRequest`, docs sample not golden-backed, help text missing when-NOT-to-use.
+
 ## v1.1 (not scheduled — PRD §12b, persona-ranked)
 
 `Get-AtlFlowReport` · standup-delta tool · multi-board rollups · link-graph traversal · text attachments · watchers/worklog · argument completers/`-All`/`-Raw`/`Open-AtlIssue` · SecretManagement-required mode · SBOM/provenance.
